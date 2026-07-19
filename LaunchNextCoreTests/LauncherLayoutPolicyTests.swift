@@ -72,6 +72,76 @@ final class LauncherLayoutPolicyTests: XCTestCase {
         XCTAssertTrue(metrics.gridFrame.height.isFinite)
     }
 
+    func testTinyAvailableSizeKeepsFramesContained() {
+        let request = LauncherLayoutRequest(
+            availableSize: CGSize(width: 1, height: 1),
+            mode: .compact,
+            preferredColumns: 7,
+            preferredRows: 5,
+            preferredIconSize: 72,
+            columnSpacing: 24,
+            rowSpacing: 24,
+            showsLabels: true,
+            labelHeight: 20
+        )
+
+        let metrics = LauncherLayoutPolicy.resolve(request)
+
+        XCTAssertEqual(metrics.columns, 1)
+        XCTAssertEqual(metrics.rows, 1)
+        XCTAssertEqual(metrics.iconSize, 0)
+        assertContained(metrics.toolbarFrame, in: request.availableSize)
+        assertContained(metrics.gridFrame, in: request.availableSize)
+        assertContained(metrics.pageIndicatorFrame, in: request.availableSize)
+    }
+
+    func testExtremelyLargeInputsStayFiniteAndBounded() {
+        let request = LauncherLayoutRequest(
+            availableSize: CGSize(width: CGFloat.greatestFiniteMagnitude,
+                                  height: CGFloat.greatestFiniteMagnitude),
+            mode: .fullscreen,
+            preferredColumns: .max,
+            preferredRows: .max,
+            preferredIconSize: CGFloat.greatestFiniteMagnitude,
+            columnSpacing: CGFloat.greatestFiniteMagnitude,
+            rowSpacing: CGFloat.greatestFiniteMagnitude,
+            showsLabels: true,
+            labelHeight: CGFloat.greatestFiniteMagnitude
+        )
+
+        let metrics = LauncherLayoutPolicy.resolve(request)
+
+        XCTAssertTrue(metrics.gridFrame.origin.x.isFinite)
+        XCTAssertTrue(metrics.gridFrame.origin.y.isFinite)
+        XCTAssertTrue(metrics.gridFrame.width.isFinite)
+        XCTAssertTrue(metrics.gridFrame.height.isFinite)
+        XCTAssertTrue(metrics.iconSize.isFinite)
+        XCTAssertLessThanOrEqual(metrics.columns, 64)
+        XCTAssertLessThanOrEqual(metrics.rows, 64)
+        XCTAssertLessThanOrEqual(metrics.itemsPerPage, 4096)
+    }
+
+    func testOversubscribedGridReducesCapacityBeforeViolatingMinimumIconSize() {
+        let request = LauncherLayoutRequest(
+            availableSize: CGSize(width: 800, height: 600),
+            mode: .compact,
+            preferredColumns: 100,
+            preferredRows: 100,
+            preferredIconSize: 96,
+            columnSpacing: 24,
+            rowSpacing: 24,
+            showsLabels: true,
+            labelHeight: 20
+        )
+
+        let metrics = LauncherLayoutPolicy.resolve(request)
+
+        XCTAssertLessThan(metrics.columns, request.preferredColumns)
+        XCTAssertLessThan(metrics.rows, request.preferredRows)
+        XCTAssertGreaterThanOrEqual(metrics.iconSize, 16)
+        assertContained(metrics.gridFrame, in: request.availableSize)
+    }
+
     func testResolvingTheSameRequestIsStable() {
         let request = LauncherLayoutRequest(
             availableSize: CGSize(width: 1200, height: 800),

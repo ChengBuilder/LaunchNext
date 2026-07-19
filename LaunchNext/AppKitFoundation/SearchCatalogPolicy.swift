@@ -1,12 +1,12 @@
 import Foundation
 
-struct SearchCatalogCandidate: Equatable, Sendable {
+nonisolated struct SearchCatalogCandidate: Equatable, Sendable {
     let id: String
     let displayName: String
     let isHidden: Bool
 }
 
-enum SearchCatalogPolicy {
+nonisolated enum SearchCatalogPolicy {
     static func candidates(
         visible: [SearchCatalogCandidate],
         hidden: [SearchCatalogCandidate],

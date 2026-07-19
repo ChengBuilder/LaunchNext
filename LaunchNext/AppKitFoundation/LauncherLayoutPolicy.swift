@@ -1,12 +1,12 @@
 import CoreGraphics
 import Foundation
 
-enum LauncherLayoutMode: Equatable, Sendable {
+nonisolated enum LauncherLayoutMode: Equatable, Sendable {
     case compact
     case fullscreen
 }
 
-struct LauncherLayoutRequest: Equatable, Sendable {
+nonisolated struct LauncherLayoutRequest: Equatable, Sendable {
     let availableSize: CGSize
     let mode: LauncherLayoutMode
     let preferredColumns: Int
@@ -18,14 +18,14 @@ struct LauncherLayoutRequest: Equatable, Sendable {
     let labelHeight: CGFloat
 }
 
-struct LauncherEdgeInsets: Equatable, Sendable {
+nonisolated struct LauncherEdgeInsets: Equatable, Sendable {
     let top: CGFloat
     let left: CGFloat
     let bottom: CGFloat
     let right: CGFloat
 }
 
-struct LauncherLayoutMetrics: Equatable, Sendable {
+nonisolated struct LauncherLayoutMetrics: Equatable, Sendable {
     let availableSize: CGSize
     let columns: Int
     let rows: Int
@@ -41,9 +41,11 @@ struct LauncherLayoutMetrics: Equatable, Sendable {
     var itemsPerPage: Int { columns * rows }
 }
 
-enum LauncherLayoutPolicy {
+nonisolated enum LauncherLayoutPolicy {
     private static let fallbackSize = CGSize(width: 320, height: 240)
+    private static let maximumDimension: CGFloat = 1_000_000
     private static let minimumIconSize: CGFloat = 16
+    private static let maximumTrackCount = 64
     private static let cellHorizontalClearance: CGFloat = 16
     private static let cellVerticalClearance: CGFloat = 10
     private static let iconLabelSpacing: CGFloat = 6
@@ -53,8 +55,6 @@ enum LauncherLayoutPolicy {
             width: positiveFinite(request.availableSize.width, fallback: fallbackSize.width),
             height: positiveFinite(request.availableSize.height, fallback: fallbackSize.height)
         )
-        let columns = max(1, request.preferredColumns)
-        let rows = max(1, request.preferredRows)
         let columnSpacing = nonnegativeFinite(request.columnSpacing)
         let rowSpacing = nonnegativeFinite(request.rowSpacing)
         let preferredIconSize = positiveFinite(request.preferredIconSize, fallback: 72)
@@ -74,11 +74,13 @@ enum LauncherLayoutPolicy {
             height: min(toolbarHeight, max(0, size.height - insets.top - insets.bottom))
         )
 
-        let gridOriginY = toolbarFrame.maxY + toolbarToGridSpacing
-        let pageIndicatorY = max(
-            gridOriginY,
-            size.height - insets.bottom - pageIndicatorHeight
+        let contentBottomY = max(insets.top, size.height - insets.bottom)
+        let gridOriginY = min(contentBottomY, toolbarFrame.maxY + toolbarToGridSpacing)
+        let availableIndicatorHeight = min(
+            pageIndicatorHeight,
+            max(0, contentBottomY - gridOriginY)
         )
+        let pageIndicatorY = max(gridOriginY, contentBottomY - availableIndicatorHeight)
         let gridHeight = max(0, pageIndicatorY - gridToPageIndicatorSpacing - gridOriginY)
         let gridFrame = CGRect(
             x: insets.left,
@@ -90,21 +92,37 @@ enum LauncherLayoutPolicy {
             x: insets.left,
             y: pageIndicatorY,
             width: contentWidth,
-            height: min(pageIndicatorHeight, max(0, size.height - pageIndicatorY - insets.bottom))
+            height: availableIndicatorHeight
         )
 
-        let horizontalGaps = columnSpacing * CGFloat(max(0, columns - 1))
-        let verticalGaps = rowSpacing * CGFloat(max(0, rows - 1))
+        let minimumCellWidth = minimumIconSize + cellHorizontalClearance
+        let minimumCellHeight = minimumIconSize + labelHeight
+            + (labelHeight == 0 ? 0 : iconLabelSpacing)
+            + cellVerticalClearance
+        let columns = resolvedCount(
+            preferred: request.preferredColumns,
+            available: gridFrame.width,
+            spacing: columnSpacing,
+            minimumCell: minimumCellWidth
+        )
+        let rows = resolvedCount(
+            preferred: request.preferredRows,
+            available: gridFrame.height,
+            spacing: rowSpacing,
+            minimumCell: minimumCellHeight
+        )
+        let horizontalGaps = min(gridFrame.width, columnSpacing * CGFloat(max(0, columns - 1)))
+        let verticalGaps = min(gridFrame.height, rowSpacing * CGFloat(max(0, rows - 1)))
         let cellSize = CGSize(
             width: max(0, (gridFrame.width - horizontalGaps) / CGFloat(columns)),
             height: max(0, (gridFrame.height - verticalGaps) / CGFloat(rows))
         )
         let labelBlockHeight = labelHeight == 0 ? 0 : labelHeight + iconLabelSpacing
-        let maximumIconSize = min(
-            max(minimumIconSize, cellSize.width - cellHorizontalClearance),
-            max(minimumIconSize, cellSize.height - labelBlockHeight - cellVerticalClearance)
-        )
-        let iconSize = max(minimumIconSize, min(preferredIconSize, maximumIconSize))
+        let maximumIconSize = max(0, min(
+            cellSize.width - cellHorizontalClearance,
+            cellSize.height - labelBlockHeight - cellVerticalClearance
+        ))
+        let iconSize = min(preferredIconSize, maximumIconSize)
 
         return LauncherLayoutMetrics(
             availableSize: size,
@@ -125,23 +143,44 @@ enum LauncherLayoutPolicy {
         for mode: LauncherLayoutMode,
         size: CGSize
     ) -> LauncherEdgeInsets {
+        let desired: LauncherEdgeInsets
         switch mode {
         case .compact:
-            return LauncherEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
+            desired = LauncherEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
         case .fullscreen:
             let horizontal = max(36, size.width * 0.04)
-            return LauncherEdgeInsets(
+            desired = LauncherEdgeInsets(
                 top: max(24, size.height * 0.035),
                 left: horizontal,
                 bottom: max(32, size.height * 0.06),
                 right: horizontal
             )
         }
+        return LauncherEdgeInsets(
+            top: min(desired.top, size.height),
+            left: min(desired.left, size.width),
+            bottom: min(desired.bottom, max(0, size.height - min(desired.top, size.height))),
+            right: min(desired.right, max(0, size.width - min(desired.left, size.width)))
+        )
+    }
+
+    private static func resolvedCount(
+        preferred: Int,
+        available: CGFloat,
+        spacing: CGFloat,
+        minimumCell: CGFloat
+    ) -> Int {
+        guard available >= minimumCell else { return 1 }
+        let maximum = min(
+            maximumTrackCount,
+            Int(floor((available + spacing) / (minimumCell + spacing)))
+        )
+        return min(max(1, preferred), max(1, maximum))
     }
 
     private static func positiveFinite(_ value: CGFloat, fallback: CGFloat) -> CGFloat {
         guard value.isFinite, value > 0 else { return fallback }
-        return value
+        return min(value, maximumDimension)
     }
 
     private static func nonnegativeFinite(_ value: CGFloat) -> CGFloat {
