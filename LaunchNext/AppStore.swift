@@ -3177,6 +3177,7 @@ final class AppStore: ObservableObject {
     }
 
     func scanApplications(loadPersistedOrder: Bool = true) {
+        let scanSignpost = LaunchPerformance.begin(LaunchPerformance.Name.catalogScan)
         DispatchQueue.global(qos: .userInitiated).async {
             var found: [AppInfo] = []
             var seenPaths = Set<String>()
@@ -3214,6 +3215,10 @@ final class AppStore: ObservableObject {
                     self.saveAllOrder()
                 }
                 self.refreshMissingPlaceholders()
+                LaunchPerformance.end(
+                    LaunchPerformance.Name.catalogScan,
+                    identifier: scanSignpost
+                )
                 
                 // 扫描完成后生成缓存
                 self.generateCacheAfterScan()
@@ -3223,6 +3228,7 @@ final class AppStore: ObservableObject {
     
     /// 智能扫描应用：保持现有排序，新增应用放到最后，缺失应用移除，自动页面内补位
     func scanApplicationsWithOrderPreservation() {
+        let scanSignpost = LaunchPerformance.begin(LaunchPerformance.Name.catalogScan)
         DispatchQueue.global(qos: .userInitiated).async {
             var found: [AppInfo] = []
             var seenPaths = Set<String>()
@@ -3297,6 +3303,10 @@ final class AppStore: ObservableObject {
             
             DispatchQueue.main.async {
                 self.processScannedApplications(newApps)
+                LaunchPerformance.end(
+                    LaunchPerformance.Name.catalogScan,
+                    identifier: scanSignpost
+                )
                 
                 // 扫描完成后生成缓存
                 self.generateCacheAfterScan()
@@ -5380,6 +5390,13 @@ final class AppStore: ObservableObject {
     
     /// 扫描完成后生成缓存
     private func generateCacheAfterScan() {
+        let cacheSignpost = LaunchPerformance.begin(LaunchPerformance.Name.catalogCacheSchedule)
+        defer {
+            LaunchPerformance.end(
+                LaunchPerformance.Name.catalogCacheSchedule,
+                identifier: cacheSignpost
+            )
+        }
         
         // 检查缓存是否有效
         if !cacheManager.isCacheValid {

@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import SwiftData
 import Combine
+import OSLog
 import QuartzCore
 import Carbon
 import Carbon.HIToolbox
@@ -9,6 +10,11 @@ import Carbon.HIToolbox
 extension Notification.Name {
     static let launchpadWindowShown = Notification.Name("LaunchpadWindowShown")
     static let launchpadWindowHidden = Notification.Name("LaunchpadWindowHidden")
+    static let launchpadFirstInteractiveFrame = Notification.Name("LaunchpadFirstInteractiveFrame")
+}
+
+func signalLaunchpadFirstInteractiveFrame() {
+    NotificationCenter.default.post(name: .launchpadFirstInteractiveFrame, object: nil)
 }
 
 class BorderlessWindow: NSWindow {
@@ -26,7 +32,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSGestureR
     static var shared: AppDelegate?
 
     // let authStore = FileAuthStore()
+    private let launchSignpost = LaunchPerformance.begin(LaunchPerformance.Name.appLaunch)
     private var window: NSWindow?
+    private var firstInteractiveFrameSignpost: OSSignpostID? = LaunchPerformance.begin(
+        LaunchPerformance.Name.firstInteractiveFrame
+    )
+    private var firstInteractiveFrameObserver: NSObjectProtocol?
     private let minimumContentSize = NSSize(width: 800, height: 600)
     private var lastShowAt: Date?
     private var cancellables = Set<AnyCancellable>()
@@ -61,10 +72,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSGestureR
     private var gestureWakeRecoveryWorkItems: [DispatchWorkItem] = []
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if runHeadlessModeIfRequested() { return }
-        guard !isTerminating else { return }
+        LaunchPerformance.end(
+            LaunchPerformance.Name.appLaunch,
+            identifier: launchSignpost
+        )
+        if runHeadlessModeIfRequested() {
+            cancelFirstInteractiveFrameSignpost()
+            return
+        }
+        guard !isTerminating else {
+            cancelFirstInteractiveFrameSignpost()
+            return
+        }
 
         Self.shared = self
+        firstInteractiveFrameObserver = NotificationCenter.default.addObserver(
+            forName: .launchpadFirstInteractiveFrame,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self,
+                  let window = self.window,
+                  window.isVisible,
+                  window.alphaValue > 0 else { return }
+            self.finishFirstInteractiveFrameSignpost()
+        }
         // let copilotProvider = CopilotProvider(authStore: authStore)
         // LLMProviderRegistry.shared.register(provider: copilotProvider)
 
@@ -154,6 +186,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSGestureR
         isTerminating = true
         NSApp.terminate(nil)
         return true
+    }
+
+    private func finishFirstInteractiveFrameSignpost() {
+        guard let identifier = firstInteractiveFrameSignpost else { return }
+        LaunchPerformance.end(
+            LaunchPerformance.Name.firstInteractiveFrame,
+            identifier: identifier
+        )
+        firstInteractiveFrameSignpost = nil
+        if let observer = firstInteractiveFrameObserver {
+            NotificationCenter.default.removeObserver(observer)
+            firstInteractiveFrameObserver = nil
+        }
+    }
+
+    private func cancelFirstInteractiveFrameSignpost() {
+        firstInteractiveFrameSignpost = nil
+        if let observer = firstInteractiveFrameObserver {
+            NotificationCenter.default.removeObserver(observer)
+            firstInteractiveFrameObserver = nil
+        }
     }
 
     private func startCLIEndpointMonitorIfNeeded() {
@@ -1553,6 +1606,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSGestureR
     }
 
     deinit {
+        cancelFirstInteractiveFrameSignpost()
         stopCLIEndpointMonitor()
         cliIPCServer?.stop()
         unregisterGlobalHotKey()
@@ -1600,10 +1654,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSGestureR
     private func performShowWindow() {
         pendingShow = false
         guard let window = window else { return }
-
         if windowIsVisible && !isAnimatingWindow && window.alphaValue >= 0.99 {
             return
         }
+        let showSignpost = LaunchPerformance.begin(LaunchPerformance.Name.windowShow)
 
         let screen = getCurrentActiveScreen() ?? NSScreen.main!
         let rect = appStore.isFullscreenMode ? screen.frame : calculateContentRect(for: screen)
@@ -1624,6 +1678,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSGestureR
         window.makeKey()
         window.makeMain()
 
+        DispatchQueue.main.async {
+            signalLaunchpadFirstInteractiveFrame()
+        }
+
         lastShowAt = Date()
         windowIsVisible = true
         updateSystemUIVisibility()
@@ -1631,6 +1689,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSGestureR
         NotificationCenter.default.post(name: .launchpadWindowShown, object: nil)
 
         let finalizeShow: () -> Void = {
+            LaunchPerformance.end(
+                LaunchPerformance.Name.windowShow,
+                identifier: showSignpost
+            )
             self.windowIsVisible = true
             self.updateSystemUIVisibility()
             // Ensure focus after animation completes
@@ -1654,10 +1716,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSGestureR
     private func performHideWindow() {
         pendingHide = false
         guard let window = window else { return }
+        let hideSignpost = LaunchPerformance.begin(LaunchPerformance.Name.windowHide)
 
         let shouldPlaySound = windowIsVisible && !isTerminating
 
         let finalize: () -> Void = {
+            LaunchPerformance.end(
+                LaunchPerformance.Name.windowHide,
+                identifier: hideSignpost
+            )
             self.windowIsVisible = false
             self.updateSystemUIVisibility()
             window.orderOut(nil)

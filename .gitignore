@@ -33,5 +33,6 @@ LaunchNext/AI/TODO.md
 # Local docs draft (keep the maintained specification and ADRs tracked)
 /docs/*
 !/docs/appkit-rebuild-spec.md
+!/docs/performance-benchmark.md
 !/docs/decisions/
 !/docs/decisions/0001-native-appkit-rebuild.md

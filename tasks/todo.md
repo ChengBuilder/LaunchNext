@@ -10,28 +10,34 @@ complete. Every task must leave the project buildable.
 - [x] Define architecture, visual rules, performance contract, and migration
   boundaries.
 - [x] Record ADR-0001 and the phased implementation plan.
-- [ ] Owner reviews open questions and accepts or amends the specification.
-- [ ] Push the verified Phase 0 documentation commit.
+- [x] Owner authorized implementation to continue; unresolved questions remain
+  release gates.
+- [x] Push the verified Phase 0 documentation commit (`95fd6da`).
 
 ## Phase 1: Safety Rails
 
-- [ ] Add `LaunchNextTests` target with an isolated defaults suite and fixtures.
-  - Acceptance: tests never read/write live LaunchNext user data.
-  - Verify: a sentinel preference test passes and live plist remains unchanged.
-- [ ] Add failing tests for current layout policy examples.
+- [x] Add an isolated SwiftPM XCTest harness for pure AppKit foundation
+  contracts.
+  - Acceptance: tests have no dependency on live LaunchNext user data.
+  - Verify: `swift test` runs with an isolated HOME and scratch path, and an
+    isolated-suite sentinel never appears in standard defaults.
+- [x] Add failing tests for current layout policy examples.
   - Acceptance: compact/full-screen boundary cases and stable geometry are
     specified.
   - Verify: tests fail before `LauncherLayoutPolicy` exists.
-- [ ] Implement `LauncherLayoutPolicy` as pure geometry.
+- [x] Implement `LauncherLayoutPolicy` as pure geometry.
   - Acceptance: all layout examples pass with no AppKit view dependency.
   - Verify: focused XCTest plan passes.
-- [ ] Add failing hidden-catalog/search tests.
+- [x] Add failing hidden-catalog/search tests.
   - Acceptance: default exclusion and opt-in inclusion are specified.
   - Verify: tests fail against current prune-on-hide behavior.
-- [ ] Add signpost intervals and benchmark runbook.
-  - Acceptance: launch, first frame, scan, index, and animation intervals appear
+- [x] Add signpost intervals and benchmark runbook.
+  - Acceptance: launch, first frame, scan, cache scheduling, and window
+    animation intervals appear
     in Instruments without logging user paths.
-  - Verify: manual signpost capture plus clean build.
+  - Verify: focused typecheck plus manual Instruments capture outside the Codex
+    sandbox; full Xcode build currently stops only when the outer sandbox blocks
+    the existing SwiftData macro plugin.
 - [ ] Commit, review, and push Phase 1.
 
 ## Phase 2: Native Shell

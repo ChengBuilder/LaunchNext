@@ -311,6 +311,9 @@ struct LaunchpadView: View {
          }
 
            .onAppear {
+              DispatchQueue.main.async {
+                  signalLaunchpadFirstInteractiveFrame()
+              }
               if !appStore.shouldShowOnboarding {
                   appStore.performInitialScanIfNeeded()
                   checkCacheStatus()

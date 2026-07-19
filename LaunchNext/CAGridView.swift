@@ -91,6 +91,7 @@ final class CAGridView: NSView, CALayerDelegate, NSDraggingSource {
     var frameCount: Int = 0
     var currentFPS: Double = 120
     var frameTimes: [Double] = []
+    private var didSignalFirstInteractiveFrame = false
 
     // 图标缓存
     var iconCache: [String: CGImage] = [:]
@@ -439,6 +440,15 @@ final class CAGridView: NSView, CALayerDelegate, NSDraggingSource {
     }
 
     @objc func displayLinkFired(_ link: CADisplayLink) {
+        if !didSignalFirstInteractiveFrame,
+           window?.isVisible == true,
+           (window?.alphaValue ?? 0) > 0,
+           bounds.width > 0,
+           bounds.height > 0 {
+            didSignalFirstInteractiveFrame = true
+            signalLaunchpadFirstInteractiveFrame()
+        }
+
         // 只在动画时才更新
         guard isScrollAnimating || isDraggingItem else {
             // 空闲时重置帧计数
