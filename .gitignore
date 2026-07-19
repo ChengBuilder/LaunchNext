@@ -30,5 +30,8 @@ parallel_version/
 # Local AI notes
 LaunchNext/AI/TODO.md
 
-# Local docs draft
-/docs/
+# Local docs draft (keep the maintained specification and ADRs tracked)
+/docs/*
+!/docs/appkit-rebuild-spec.md
+!/docs/decisions/
+!/docs/decisions/0001-native-appkit-rebuild.md
